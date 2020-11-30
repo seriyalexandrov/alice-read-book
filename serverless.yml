@@ -1,0 +1,15 @@
+
+service: aliceread
+frameworkVersion: '2'
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+
+package:
+  exclude:
+    - .idea/**
+
+functions:
+  aliceread:
+    handler: handler.aliceread
