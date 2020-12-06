@@ -1,48 +1,40 @@
 'use strict'
 const {google} = require('googleapis');
+const constants = require('./constants');
 
-const credentials = {
-    //drive creds here
-};
-
-const accessToken = {
-    //drive token here
-};
-
-const parentFolder = '12punsZgqg3C2YodgmJxpV6QRO9C0-AB3';
 
 module.exports.aliceread = async request => {
     try {
         let parsedAliceRequest = JSON.parse(request.body);
-        const authorizedClient = authorize(credentials);
-        const statusFileId = await getStatusFileId(authorizedClient);
-        const statusContent = await readFile(authorizedClient, statusFileId);
+        console.log(request.body);
+        const authorizedClient = authorize();
 
         if (parsedAliceRequest.session.message_id === 0) {
-            console.log("Read the book?");
-            return aliceResponse(parsedAliceRequest, "Читать книгу " + statusContent.name + " ?", ["да", "читай", "нет"]);
+            const statusFileId = await getStatusFileId(authorizedClient);
+            const statusContent = await readFile(authorizedClient, statusFileId);
+            return aliceResponse(parsedAliceRequest, "Читать книгу " + statusContent.name + " ?", [], statusContent);
         }
         if (stopReading(parsedAliceRequest)) {
-            console.log("Stop read the book");
-            return aliceResponse(parsedAliceRequest, "Закончили читать", null, true);
+            const statusFileId = await getStatusFileId(authorizedClient);
+            updateStatusFile(authorizedClient, statusFileId, getCurrentState(parsedAliceRequest));
+            return aliceResponse(parsedAliceRequest, "Закончили читать", null, {}, true);
         }
 
+        let statusContent = getCurrentState(parsedAliceRequest);
         const currentPosition = statusContent.current;
 
         statusContent.current = currentPosition + 1;
-        updateStatusFile(authorizedClient, statusFileId, statusContent);
         let bookPart = await getBookFileContent(authorizedClient, currentPosition);
 
         if (currentPosition === statusContent.total) {
-            console.log("Book finished");
-            return aliceResponse(request, bookPart + " Книга закончилась! Нужно закачать новую.", null, true);
+            return aliceResponse(parsedAliceRequest, bookPart + " Книга закончилась! Нужно закачать новую.", [], {}, true);
         } else {
             console.log("Read next part?");
-            return aliceResponse(request, bookPart + " Читать дальше?", ["дальше", "стоп"]);
+            return aliceResponse(parsedAliceRequest, bookPart + " Читать дальше?", [], statusContent);
         }
     } catch (err) {
         console.log(err);
-        return aliceResponse(request, "В навыке ошибка! Нужно исправлять", null, true);
+        return aliceResponse(parsedAliceRequest, "В навыке ошибка! Нужно исправлять", null, {}, true);
     }
 }
 
@@ -64,7 +56,7 @@ function stopReading(parsedAliceRequest) {
     return false;
 }
 
-function aliceResponse(parsedAliceRequest, text, hints, finishSession) {
+function aliceResponse(parsedAliceRequest, text, hints, sessionState, finishSession) {
     let aliceResponseBody;
     let buttons = [];
     if (!finishSession) {
@@ -85,6 +77,7 @@ function aliceResponse(parsedAliceRequest, text, hints, finishSession) {
     aliceResponseBody = {
         version: parsedAliceRequest.version,
         session: parsedAliceRequest.session,
+        session_state: sessionState,
         response: {
             text: text,
             buttons: buttons,
@@ -92,6 +85,7 @@ function aliceResponse(parsedAliceRequest, text, hints, finishSession) {
         },
     };
     aliceResponseBody = JSON.stringify(aliceResponseBody);
+    console.log(aliceResponseBody);
     return {
         statusCode: 200,
         body: aliceResponseBody,
@@ -101,10 +95,10 @@ function aliceResponse(parsedAliceRequest, text, hints, finishSession) {
     };
 }
 
-function authorize(credentials) {
-    const {client_secret, client_id, redirect_uris} = credentials.installed;
+function authorize() {
+    const {client_secret, client_id, redirect_uris} = constants.credentials.installed;
     const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
-    oAuth2Client.setCredentials(accessToken);
+    oAuth2Client.setCredentials(constants.accessToken);
     return oAuth2Client;
 }
 
@@ -123,7 +117,7 @@ function updateStatusFile(auth, fileId, content) {
 function getBookFileContent(auth, currentPosition) {
     const drive = google.drive({version: 'v3', auth});
     return drive.files.list({
-        q: "'google parent folder here' in parents and name='" + currentPosition + ".txt'",
+        q: "'" + constants.parentFolder + "' in parents and name='" + currentPosition + ".txt'",
         pageSize: 1,
         fields: 'files(id)',
     }).then(
@@ -145,7 +139,7 @@ function getBookFileContent(auth, currentPosition) {
 function getStatusFileId(auth) {
     const drive = google.drive({version: 'v3', auth});
     return drive.files.list({
-        q: "'google parent folder here' in parents and name='status.json'",
+        q: "'" + constants.parentFolder + "' in parents and name='status.json'",
         pageSize: 1,
         fields: 'files(id)',
     }).then(
@@ -159,6 +153,10 @@ function getStatusFileId(auth) {
         },
         err => console.log(err)
     )
+}
+
+function getCurrentState(parsedAliceRequest) {
+    return parsedAliceRequest.state.session;
 }
 
 function readFile(auth, googleFileId) {
