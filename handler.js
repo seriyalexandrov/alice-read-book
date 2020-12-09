@@ -16,7 +16,7 @@ module.exports.aliceread = async request => {
         }
         if (stopReading(parsedAliceRequest)) {
             const statusFileId = await getStatusFileId(authorizedClient);
-            updateStatusFile(authorizedClient, statusFileId, getCurrentState(parsedAliceRequest));
+            await updateStatusFile(authorizedClient, statusFileId, getCurrentState(parsedAliceRequest));
             return aliceResponse(parsedAliceRequest, "Закончили читать", null, {}, true);
         }
 
@@ -108,7 +108,7 @@ function updateStatusFile(auth, fileId, content) {
         mimeType: 'application/json',
         body: content,
     };
-    drive.files.update({
+    return drive.files.update({
         fileId: fileId,
         media: media
     });
